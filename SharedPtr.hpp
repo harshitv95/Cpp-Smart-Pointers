@@ -25,59 +25,80 @@ namespace cs540 {
         }
     };
 
+    class Counter {
+    private:
+        int count;
+
+    public:
+        Counter() : count(0) {}
+
+        int inc() {
+            return ++count;
+        }
+
+        int dec() {
+            return --count;
+        }
+
+        int get() {
+            return count;
+        }
+    };
+
     template<typename T>
     class SharedPtr;
 
     class PtrBase {
-        template<typename U>
-        friend
-        class SharedPtr;
-
-    private:
-        int ref_count;
-    protected:
-        PtrBase() : ref_count(0) {}
-
-//            template<typename U>
-//            PtrBase(typename SharedPtr<U>::PtrBase *value) : value(static_cast<T *>(value)), ref_count(0) {}
-
-//            template<typename U>
-//            PtrBase(U *value) : value(static_cast<T *>(value)), ref_count(0) {}
-
     public:
         virtual ~PtrBase() {}
 
-        virtual explicit operator bool() {
+        virtual void dealloc() {}
+
+        virtual PtrBase *clone() {
+            return new PtrBase();
+        }
+
+        virtual explicit operator bool() const {
             return true;
         }
 
-        virtual bool operator==(const PtrBase &ptr) {
+        virtual bool operator==(const PtrBase &ptr) const {
             return true;
         }
     };
 
     template<typename U>
     class PtrValue : public PtrBase {
-        template<typename T>
-        friend
-        class SharedPtr;
-
     private:
         U *value;
     protected:
+
+
+    public:
         PtrValue(U *value) : PtrBase(), value(value) {
             if (debug)
                 std::cout << "Creating instance of PtrValue having addr: " << this << std::endl;
         }
 
-    public:
         ~PtrValue() {
-            if (debug)
-                std::cout << "Attempting to delete ptr having addr: " << value << std::endl;
+//            if (debug)
+//                std::cout << "Attempting to delete ptr having addr: " << value << std::endl;
+//            delete value;
+        }
+
+        void dealloc() {
             delete value;
         }
 
-        virtual explicit operator bool() {
+        PtrBase *clone() {
+            return new PtrValue<U>(value);
+        }
+
+        U *get() {
+            return value;
+        }
+
+        virtual explicit operator bool() const {
             return value;
         }
 
@@ -86,7 +107,7 @@ namespace cs540 {
         }
 
         template<typename V>
-        bool operator==(const PtrValue<V> &ptr) {
+        bool operator==(const PtrValue<V> &ptr) const {
             return !!ptr && (value == ptr.value);
         }
     };
@@ -98,126 +119,139 @@ namespace cs540 {
         class SharedPtr;
 
     private:
-        PtrBase *ptr = nullptr;
+        PtrBase *ptr_wrap;
+        Counter *counter;
+//        T *value = nullptr;
 
     protected:
-        SharedPtr(PtrBase *ptr, bool inc = true) : ptr(ptr ? ptr : nullptr) {
+//        SharedPtr(PtrBase *ptr, bool inc = true) : SharedPtr(new PtrBase(ptr), inc) {}
+
+        SharedPtr(PtrBase *ptr, Counter *counter, bool inc = true) : ptr_wrap(ptr ? ptr : nullptr), counter(counter) {
             if (inc)
                 inc_refcount();
-            if (debug)
-                std::cout << "SharedPtr(PB*, bool) Initializing value at addr: " << ptr << ", ref_count: "
-                          << ptr->ref_count << std::endl;
+//            if (debug)
+//                std::cout << "SharedPtr(PB*, bool) Initializing value at addr: " << ptr_wrap << ", ref_count: "
+//                          << ptr_wrap->ref_count << std::endl;
         }
 
-//        template<typename U>
-//        SharedPtr(typename SharedPtr<U>::PtrBase *ptr, bool inc = true) : ptr(ptr ? ptr : nullptr) {
-//            if (inc)
-//                inc_refcount();
-//            if (debug)
-//                std::cout << "SharedPtr<U>(PB*, bool) Initializing value at addr: " ptr << ", ref_count: " << ptr->ref_count << std::endl;
-//        }
+        void dealloc() {
+            if (ptr_wrap) {
+                dec_refcount();
+                delete ptr_wrap;
+            }
+            ptr_wrap = nullptr;
+        }
 
         void dec_refcount() {
-            if (ptr && (--ptr->ref_count <= 0)) {
-                delete ptr;
-                ptr = nullptr;
+            if (ptr_wrap && (counter->dec() <= 0)) {
+                ptr_wrap->dealloc();
+                delete counter;
             }
         }
 
         void inc_refcount() {
-            if (ptr)
-                ++ptr->ref_count;
+            if (ptr_wrap)
+                counter->inc();
         }
 
-        void set(PtrBase *ptr) {
-            dec_refcount();
-            this->ptr = ptr;
-            inc_refcount();
-            if (debug)
-                std::cout << "set(PB*) Setting new value at addr: " << ptr << ", ref_count: " << ptr->ref_count
-                          << std::endl;
+        void set(PtrBase *ptr, Counter *counter, bool inc = true) {
+            dealloc();
+            this->ptr_wrap = ptr;
+            this->counter = counter;
+//            this->value = ptr->get<T>();
+            if (inc)
+                inc_refcount();
+//            if (debug)
+//                std::cout << "set(PB*) Setting new value at addr: " << ptr_wrap << ", ref_count: "
+//                          << ptr_wrap->ref_count
+//                          << std::endl;
         }
 
         template<typename U>
-        void set(const PtrBase *ptr) {
-            dec_refcount();
-            this->ptr = (PtrBase *) ptr;
-            inc_refcount();
-            if (debug)
-                std::cout << "set<U>(PB*) Setting new value at addr: " << ptr << ", ref_count: " << ptr->ref_count
-                          << std::endl;
+        void set(const PtrBase *ptr, Counter *counter, bool inc = true) {
+            dealloc();
+            this->ptr_wrap = (PtrBase *) ptr;
+            this->counter = counter;
+//            this->value = ptr->get<T>();
+            if (inc)
+                inc_refcount();
+//            if (debug)
+//                std::cout << "set<U>(PB*) Setting new value at addr: " << ptr_wrap << ", ref_count: "
+//                          << ptr_wrap->ref_count
+//                          << std::endl;
         }
 
     public:
-
         // |- Construction:
-        SharedPtr() : ptr(nullptr) {
+        SharedPtr() : ptr_wrap(nullptr), counter(nullptr) {
             if (debug)
-                std::cout << "SharedPtr() Initializing null at addr: " << ptr << std::endl;
+                std::cout << "SharedPtr() Initializing null at addr: " << ptr_wrap << std::endl;
         }
 
-        SharedPtr(T *t) : SharedPtr(new PtrValue<T>(t), true) {}
+        SharedPtr(T *t) : SharedPtr(new PtrValue<T>(t), new Counter, true) {}
 
         template<typename U>
-        explicit SharedPtr(U *u): SharedPtr(new PtrValue<U>(u), true) {}
+        explicit SharedPtr(U *u): SharedPtr(new PtrValue<U>(u), new Counter, true) {}
 
         // |-- Copy Construction
-        SharedPtr(const SharedPtr &p) : SharedPtr(p.ptr, true) {}
+        SharedPtr(const SharedPtr &p) : SharedPtr(p.ptr_wrap->clone(), p.counter, true) {}
 
         template<typename U>
-        SharedPtr(const SharedPtr<U> &p) :
-                SharedPtr(p.ptr, true) {}
+        SharedPtr(const SharedPtr<U> &p) : SharedPtr(p.ptr_wrap->clone(), p.counter, true) {}
 
-        SharedPtr(SharedPtr &&p) : SharedPtr(p.ptr, false) {}
+        SharedPtr(SharedPtr &&p) : SharedPtr(p.ptr_wrap->clone(), p.counter, false) {}
 
         template<typename U>
-        SharedPtr(SharedPtr<U> &&p): SharedPtr(p.ptr, false) {}
+        SharedPtr(SharedPtr<U> &&p): SharedPtr(p.ptr_wrap->clone(), p.counter, false) {}
 
         // |- Destruction
         ~SharedPtr() {
-            dec_refcount();
+            dealloc();
         }
 
         // |- Assignment Operators
         // |-- Copy Assignment
         SharedPtr &operator=(const SharedPtr &p) {
             if (this != &p)
-                this->set(p.ptr);
+                this->set(p.ptr_wrap->clone(), p.counter);
             return *this;
         }
 
         template<typename U>
         SharedPtr<T> &operator=(const SharedPtr<U> &p) {
 //            if (this != &p)
-            this->set<U>(p.ptr);
+            this->set<U>(p.ptr_wrap->clone(), p.counter);
             return *this;
         }
 
         // |-- Move Assignment
         SharedPtr &operator=(SharedPtr &&p) {
-            this->set(p.ptr);
+            this->set(p.ptr_wrap, p.counter);
             return *this;
         }
 
         template<typename U>
         SharedPtr &operator=(SharedPtr<U> &&p) {
-            this->set<U>(p.ptr);
+            this->set<U>(p.ptr_wrap, p.counter);
             return *this;
         }
 
         // |- Modifiers
         void reset() {
-            set(nullptr);
+            set(nullptr, nullptr);
         }
 
         template<typename U>
         void reset(U *p) {
-            this->set<U>(!p ? nullptr : new PtrValue<U>(p));
+            if (!p)
+                this->reset();
+            else
+                this->set<U>(new PtrValue<U>(p), new Counter);
         }
 
         // |- Observers
         T *get() const {
-            return ((PtrValue<T> *) ptr)->value;
+            return ((PtrValue<T> *) ptr_wrap)->get();
         }
 
         T &operator*() const {
@@ -229,7 +263,7 @@ namespace cs540 {
         }
 
         explicit operator bool() const {
-            return ptr && *ptr;
+            return ptr_wrap && *ptr_wrap;
         }
 
         template<typename T1>
@@ -239,23 +273,24 @@ namespace cs540 {
         template<typename T1, typename T2>
         friend bool operator==(const SharedPtr<T1> &, const SharedPtr<T2> &);
 
-//        template<typename T1, typename T2>
-//        friend SharedPtr<T1> static_pointer_cast(const SharedPtr<T2> &);
+        template<typename T1, typename T2>
+        friend SharedPtr<T1> static_pointer_cast(const SharedPtr<T2> &);
 
-//        template<typename T1, typename T2>
-//        friend SharedPtr<T1> dynamic_pointer_cast(const SharedPtr<T2> &);
+        template<typename T1, typename T2>
+        friend SharedPtr<T1> dynamic_pointer_cast(const SharedPtr<T2> &);
 
     };
 
     template<typename T1>
     bool operator!(const SharedPtr<T1> &sp) {
-        return !sp.ptr || !(sp.get());
+        return !sp.ptr_wrap || !(sp.get());
     }
 
     template<typename T1, typename T2>
     bool operator==(const SharedPtr<T1> &sp1, const SharedPtr<T2> &sp2) {
         if (!sp1 && !sp2) return true;
-        return sp1.ptr == sp2.ptr;
+        return sp1.counter == sp2.counter;
+//        return sp1.ptr_wrap == sp2.ptr_wrap;
     }
 
     template<typename T>
@@ -286,12 +321,18 @@ namespace cs540 {
     template<typename T, typename U>
     SharedPtr<T> static_pointer_cast(const SharedPtr<U> &sp) {
         return SharedPtr<T>(sp);
+//        return SharedPtr<T>(new PtrValue<T>(static_cast<T *>(sp.get())), sp.counter);
 //        return SharedPtr<T>(static_cast<T *>(sp.ptr->get()));
     }
 
     template<typename T, typename U>
     SharedPtr<T> dynamic_pointer_cast(const SharedPtr<U> &sp) {
-        return SharedPtr<T>(dynamic_cast<T *>(sp.get()));
+        return SharedPtr<T>(new PtrValue<T>(dynamic_cast<T *>(sp.get())), sp.counter);
+//        SharedPtr<T> ret;
+//        PtrWrapper *ptr_wrap = new PtrWrapper()
+////        ret.value = dynamic_cast<T *>(sp.value);
+//        ret.ptr_wrap = sp.ptr_wrap;
+//        return ret;
     }
 
 }
