@@ -14,6 +14,7 @@ namespace cs540 {
     extern bool debug;
 
     class SharedPtrMutex {
+    private:
         std::mutex sp_mutex;
     public:
         SharedPtrMutex() {
@@ -88,6 +89,7 @@ namespace cs540 {
 
         void dealloc() {
             delete value;
+            value = nullptr;
         }
 
         PtrBase *clone() {
@@ -121,12 +123,11 @@ namespace cs540 {
     private:
         PtrBase *ptr_wrap;
         Counter *counter;
-//        T *value = nullptr;
 
     protected:
-//        SharedPtr(PtrBase *ptr, bool inc = true) : SharedPtr(new PtrBase(ptr), inc) {}
 
         SharedPtr(PtrBase *ptr, Counter *counter, bool inc = true) : ptr_wrap(ptr ? ptr : nullptr), counter(counter) {
+            SharedPtrMutex mutex;
             if (inc)
                 inc_refcount();
 //            if (debug)
@@ -135,7 +136,7 @@ namespace cs540 {
         }
 
         void dealloc() {
-            if (ptr_wrap) {
+            if (counter) {
                 dec_refcount();
                 delete ptr_wrap;
             }
@@ -143,9 +144,10 @@ namespace cs540 {
         }
 
         void dec_refcount() {
-            if (ptr_wrap && (counter->dec() <= 0)) {
-                ptr_wrap->dealloc();
+            if (counter && (counter->dec() <= 0)) {
+                if (ptr_wrap) ptr_wrap->dealloc();
                 delete counter;
+                counter = nullptr;
             }
         }
 
@@ -172,7 +174,6 @@ namespace cs540 {
             dealloc();
             this->ptr_wrap = (PtrBase *) ptr;
             this->counter = counter;
-//            this->value = ptr->get<T>();
             if (inc)
                 inc_refcount();
 //            if (debug)
@@ -183,7 +184,7 @@ namespace cs540 {
 
     public:
         // |- Construction:
-        SharedPtr() : ptr_wrap(nullptr), counter(nullptr) {
+        SharedPtr() : ptr_wrap(nullptr), counter(new Counter) {
             if (debug)
                 std::cout << "SharedPtr() Initializing null at addr: " << ptr_wrap << std::endl;
         }
@@ -194,55 +195,73 @@ namespace cs540 {
         explicit SharedPtr(U *u): SharedPtr(new PtrValue<U>(u), new Counter, true) {}
 
         // |-- Copy Construction
-        SharedPtr(const SharedPtr &p) : SharedPtr(p.ptr_wrap->clone(), p.counter, true) {}
+        SharedPtr(const SharedPtr &p) : SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, true) {}
 
         template<typename U>
-        SharedPtr(const SharedPtr<U> &p) : SharedPtr(p.ptr_wrap->clone(), p.counter, true) {}
+        SharedPtr(const SharedPtr<U> &p) : SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, true) {}
 
-        SharedPtr(SharedPtr &&p) : SharedPtr(p.ptr_wrap->clone(), p.counter, false) {}
+        // |- Move Construction
+        SharedPtr(SharedPtr &&p) : SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, false) {
+            p.ptr_wrap = nullptr;
+            p.counter = nullptr;
+        }
 
         template<typename U>
-        SharedPtr(SharedPtr<U> &&p): SharedPtr(p.ptr_wrap->clone(), p.counter, false) {}
+        SharedPtr(SharedPtr<U> &&p): SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, false) {
+            p.ptr_wrap = nullptr;
+            p.counter = nullptr;
+        }
 
         // |- Destruction
         ~SharedPtr() {
+            SharedPtrMutex mutex;
             dealloc();
         }
 
         // |- Assignment Operators
         // |-- Copy Assignment
         SharedPtr &operator=(const SharedPtr &p) {
+            SharedPtrMutex mutex;
             if (this != &p)
-                this->set(p.ptr_wrap->clone(), p.counter);
+                this->set(!p ? nullptr : p.ptr_wrap->clone(), p.counter);
             return *this;
         }
 
         template<typename U>
         SharedPtr<T> &operator=(const SharedPtr<U> &p) {
+            SharedPtrMutex mutex;
 //            if (this != &p)
-            this->set<U>(p.ptr_wrap->clone(), p.counter);
+            this->set<U>(!p ? nullptr : p.ptr_wrap->clone(), p.counter);
             return *this;
         }
 
         // |-- Move Assignment
         SharedPtr &operator=(SharedPtr &&p) {
-            this->set(p.ptr_wrap, p.counter);
+            SharedPtrMutex mutex;
+            this->set(!p ? nullptr : p.ptr_wrap, p.counter, false);
+            p.ptr_wrap = nullptr;
+            p.counter = nullptr;
             return *this;
         }
 
         template<typename U>
         SharedPtr &operator=(SharedPtr<U> &&p) {
-            this->set<U>(p.ptr_wrap, p.counter);
+            SharedPtrMutex mutex;
+            this->set<U>(!p ? nullptr : p.ptr_wrap, p.counter, false);
+            p.ptr_wrap = nullptr;
+            p.counter = nullptr;
             return *this;
         }
 
         // |- Modifiers
         void reset() {
+            SharedPtrMutex mutex;
             set(nullptr, nullptr);
         }
 
         template<typename U>
         void reset(U *p) {
+            SharedPtrMutex mutex;
             if (!p)
                 this->reset();
             else
@@ -290,7 +309,6 @@ namespace cs540 {
     bool operator==(const SharedPtr<T1> &sp1, const SharedPtr<T2> &sp2) {
         if (!sp1 && !sp2) return true;
         return sp1.counter == sp2.counter;
-//        return sp1.ptr_wrap == sp2.ptr_wrap;
     }
 
     template<typename T>
