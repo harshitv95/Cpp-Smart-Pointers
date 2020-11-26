@@ -15,14 +15,14 @@ namespace cs540 {
 
     class SharedPtrMutex {
     private:
-        std::mutex sp_mutex;
+        std::mutex *sp_mutex;
     public:
-        SharedPtrMutex() {
-            sp_mutex.lock();
+        SharedPtrMutex(std::mutex *mutex) : sp_mutex(mutex) {
+            sp_mutex->lock();
         }
 
         ~SharedPtrMutex() {
-            sp_mutex.unlock();
+            sp_mutex->unlock();
         }
     };
 
@@ -82,9 +82,6 @@ namespace cs540 {
         }
 
         ~PtrValue() {
-//            if (debug)
-//                std::cout << "Attempting to delete ptr having addr: " << value << std::endl;
-//            delete value;
         }
 
         void dealloc() {
@@ -123,16 +120,14 @@ namespace cs540 {
     private:
         PtrBase *ptr_wrap;
         Counter *counter;
+        std::mutex sp_mutex;
 
     protected:
 
         SharedPtr(PtrBase *ptr, Counter *counter, bool inc = true) : ptr_wrap(ptr ? ptr : nullptr), counter(counter) {
-            SharedPtrMutex mutex;
+            SharedPtrMutex mutex(&sp_mutex);
             if (inc)
                 inc_refcount();
-//            if (debug)
-//                std::cout << "SharedPtr(PB*, bool) Initializing value at addr: " << ptr_wrap << ", ref_count: "
-//                          << ptr_wrap->ref_count << std::endl;
         }
 
         void dealloc() {
@@ -160,13 +155,8 @@ namespace cs540 {
             dealloc();
             this->ptr_wrap = ptr;
             this->counter = counter;
-//            this->value = ptr->get<T>();
             if (inc)
                 inc_refcount();
-//            if (debug)
-//                std::cout << "set(PB*) Setting new value at addr: " << ptr_wrap << ", ref_count: "
-//                          << ptr_wrap->ref_count
-//                          << std::endl;
         }
 
         template<typename U>
@@ -176,10 +166,6 @@ namespace cs540 {
             this->counter = counter;
             if (inc)
                 inc_refcount();
-//            if (debug)
-//                std::cout << "set<U>(PB*) Setting new value at addr: " << ptr_wrap << ", ref_count: "
-//                          << ptr_wrap->ref_count
-//                          << std::endl;
         }
 
     public:
@@ -214,14 +200,14 @@ namespace cs540 {
 
         // |- Destruction
         ~SharedPtr() {
-            SharedPtrMutex mutex;
+            SharedPtrMutex mutex(&sp_mutex);
             dealloc();
         }
 
         // |- Assignment Operators
         // |-- Copy Assignment
         SharedPtr &operator=(const SharedPtr &p) {
-            SharedPtrMutex mutex;
+            SharedPtrMutex mutex(&sp_mutex);
             if (this != &p)
                 this->set(!p ? nullptr : p.ptr_wrap->clone(), p.counter);
             return *this;
@@ -229,7 +215,7 @@ namespace cs540 {
 
         template<typename U>
         SharedPtr<T> &operator=(const SharedPtr<U> &p) {
-            SharedPtrMutex mutex;
+            SharedPtrMutex mutex(&sp_mutex);
 //            if (this != &p)
             this->set<U>(!p ? nullptr : p.ptr_wrap->clone(), p.counter);
             return *this;
@@ -237,7 +223,7 @@ namespace cs540 {
 
         // |-- Move Assignment
         SharedPtr &operator=(SharedPtr &&p) {
-            SharedPtrMutex mutex;
+            SharedPtrMutex mutex(&sp_mutex);
             this->set(!p ? nullptr : p.ptr_wrap, p.counter, false);
             p.ptr_wrap = nullptr;
             p.counter = nullptr;
@@ -246,7 +232,7 @@ namespace cs540 {
 
         template<typename U>
         SharedPtr &operator=(SharedPtr<U> &&p) {
-            SharedPtrMutex mutex;
+            SharedPtrMutex mutex(&sp_mutex);
             this->set<U>(!p ? nullptr : p.ptr_wrap, p.counter, false);
             p.ptr_wrap = nullptr;
             p.counter = nullptr;
@@ -255,13 +241,13 @@ namespace cs540 {
 
         // |- Modifiers
         void reset() {
-            SharedPtrMutex mutex;
+            SharedPtrMutex mutex(&sp_mutex);
             set(nullptr, nullptr);
         }
 
         template<typename U>
         void reset(U *p) {
-            SharedPtrMutex mutex;
+            SharedPtrMutex mutex(&sp_mutex);
             if (!p)
                 this->reset();
             else
@@ -282,7 +268,7 @@ namespace cs540 {
         }
 
         explicit operator bool() const {
-            return ptr_wrap && *ptr_wrap;
+            return ptr_wrap && !!(get());
         }
 
         template<typename T1>
@@ -339,18 +325,11 @@ namespace cs540 {
     template<typename T, typename U>
     SharedPtr<T> static_pointer_cast(const SharedPtr<U> &sp) {
         return SharedPtr<T>(sp);
-//        return SharedPtr<T>(new PtrValue<T>(static_cast<T *>(sp.get())), sp.counter);
-//        return SharedPtr<T>(static_cast<T *>(sp.ptr->get()));
     }
 
     template<typename T, typename U>
     SharedPtr<T> dynamic_pointer_cast(const SharedPtr<U> &sp) {
         return SharedPtr<T>(new PtrValue<T>(dynamic_cast<T *>(sp.get())), sp.counter);
-//        SharedPtr<T> ret;
-//        PtrWrapper *ptr_wrap = new PtrWrapper()
-////        ret.value = dynamic_cast<T *>(sp.value);
-//        ret.ptr_wrap = sp.ptr_wrap;
-//        return ret;
     }
 
 }
