@@ -1,3 +1,4 @@
+
 //
 // Created by harshitv on 11/20/2020.
 //
@@ -5,54 +6,16 @@
 #ifndef _SMARTPOINTER_
 #define _SMARTPOINTER_
 
-#include <iostream>
-#include <typeinfo>
-#include <mutex>
-
-using std::cout;
-using std::endl;
+#include <cstddef>
 
 namespace cs540 {
 
-    extern bool debug;
-
-//    class SharedPtrMutex {
-//    private:
-//        std::mutex *sp_mutex;
-//    public:
-//        SharedPtrMutex() : sp_mutex(nullptr) {}
-//
-//        SharedPtrMutex(std::mutex *mutex) : sp_mutex(mutex) {
-////            cout << "[" << this << "]" << "Attempting to lock" << endl;
-//            sp_mutex->lock();
-////            cout << "[" << this << "]" << "Successfully locked" << endl;
-//        }
-//
-//        void set_mutex(std::mutex *mutex) {
-//            if (mutex)
-//                mutex->lock();
-//            if (sp_mutex)
-//                sp_mutex->unlock();
-//            this->sp_mutex = mutex;
-//        }
-//
-//        ~SharedPtrMutex() {
-////            cout << "[" << this << "]" << "Attempting to release lock" << endl;
-//            if (sp_mutex)
-//                sp_mutex->unlock();
-////            cout << "[" << this << "]" << "Successfully released lock" << endl;
-//        }
-//    };
-
     class Counter {
     private:
-//        int *count;
-//        std::mutex sp_mutex;
         int count;
 
     public:
         Counter() : count(0) {}
-//        Counter() : count(new int(0)) {}
 
         int inc() {
             return __sync_add_and_fetch(&count, 1, __ATOMIC_SEQ_CST);
@@ -66,18 +29,9 @@ namespace cs540 {
             return count;
         }
 
-//        explicit operator bool() {
-//            return !!count;
-//        }
-
         ~Counter() {
-//            delete count;
-//            count = nullptr;
         }
 
-//        std::mutex *get_mutex() {
-//            return &sp_mutex;
-//        }
     };
 
     template<typename T>
@@ -98,7 +52,7 @@ namespace cs540 {
         }
 
         virtual bool operator==(const PtrBase &ptr) const {
-            return true;
+            return this == &ptr;
         }
     };
 
@@ -106,13 +60,8 @@ namespace cs540 {
     class PtrValue : public PtrBase {
     private:
         U *value;
-    protected:
-
-
     public:
         PtrValue(U *value) : PtrBase(), value(value) {
-            if (debug)
-                std::cout << "Creating instance of PtrValue having addr: " << this << std::endl;
         }
 
         ~PtrValue() {
@@ -154,12 +103,10 @@ namespace cs540 {
     private:
         PtrBase *ptr_wrap;
         Counter *counter;
-//        std::mutex sp_mutex;
 
     protected:
 
         SharedPtr(PtrBase *ptr, Counter *counter, bool inc = true) : ptr_wrap(ptr ? ptr : nullptr), counter(counter) {
-//            SharedPtrMutex mutex(&sp_mutex);
             if (inc)
                 inc_refcount();
         }
@@ -208,8 +155,6 @@ namespace cs540 {
     public:
         // |- Construction:
         SharedPtr() : ptr_wrap(nullptr), counter(nullptr) {
-            if (debug)
-                std::cout << "SharedPtr() Initializing null at addr: " << ptr_wrap << std::endl;
         }
 
         SharedPtr(T *t) : SharedPtr(new PtrValue<T>(t), new Counter, true) {}
