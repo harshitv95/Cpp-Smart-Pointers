@@ -39,3 +39,4 @@ test*
 .idea/
 **test**
 .*
+**debug**
