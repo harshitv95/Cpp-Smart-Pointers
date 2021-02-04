@@ -7,8 +7,22 @@
 #define _SMARTPOINTER_
 
 #include <cstddef>
+#include <typeinfo>
 
 namespace cs540 {
+
+    struct dynamic_cast_helper {
+        template<typename TGT, typename SRC>
+        static TGT *do_cast(SRC *p) { return dynamic_cast<TGT *>(p); }
+    };
+
+    template<typename T, typename U>
+    T *optional_dynamic_cast(U *val) {
+        if (!val) return nullptr;
+        T *ret = static_cast<T *>(val);
+        typeid(ret = dynamic_cast_helper::do_cast<U>(ret), *val);
+        return ret;
+    }
 
     class Counter {
     private:
@@ -103,10 +117,12 @@ namespace cs540 {
     private:
         PtrBase *ptr_wrap;
         Counter *counter;
+        T *val;
 
     protected:
 
-        SharedPtr(PtrBase *ptr, Counter *counter, bool inc = true) : ptr_wrap(ptr ? ptr : nullptr), counter(counter) {
+        SharedPtr(PtrBase *ptr, Counter *counter, T *val, bool inc = true) :
+                ptr_wrap(ptr ? ptr : nullptr), counter(counter), val(val) {
             if (inc)
                 inc_refcount();
         }
@@ -157,39 +173,39 @@ namespace cs540 {
         SharedPtr() : ptr_wrap(nullptr), counter(nullptr) {
         }
 
-        SharedPtr(T *t) : SharedPtr(new PtrValue<T>(t), new Counter, true) {}
+        SharedPtr(T *t) : SharedPtr(new PtrValue<T>(t), new Counter, t) {}
 
         template<typename U>
-        explicit SharedPtr(U *u): SharedPtr(new PtrValue<U>(u), new Counter, true) {}
+        explicit SharedPtr(U *u): SharedPtr(new PtrValue<U>(u), new Counter, static_cast<T *>(u)) {}
 
         // |-- Copy Construction
-        SharedPtr(const SharedPtr &p) : SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, true) {}
+        SharedPtr(const SharedPtr &p) : SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, p.get()) {}
 
         template<typename U>
-        SharedPtr(const SharedPtr<U> &p) : SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, true) {}
+        SharedPtr(const SharedPtr<U> &p) :
+                SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, static_cast<T *>(p.get())) {}
 
         // |- Move Construction
-        SharedPtr(SharedPtr &&p) : SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, false) {
+        SharedPtr(SharedPtr &&p) : SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, p.get(), false) {
             p.ptr_wrap = nullptr;
             p.counter = nullptr;
         }
 
         template<typename U>
-        SharedPtr(SharedPtr<U> &&p): SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, false) {
+        SharedPtr(SharedPtr<U> &&p):
+                SharedPtr(!p ? nullptr : p.ptr_wrap->clone(), p.counter, static_cast<T *>(p.get()), false) {
             p.ptr_wrap = nullptr;
             p.counter = nullptr;
         }
 
         // |- Destruction
         ~SharedPtr() {
-            //SharedPtrMutex mutex(&sp_mutex);
             dealloc();
         }
 
         // |- Assignment Operators
         // |-- Copy Assignment
         SharedPtr &operator=(const SharedPtr &p) {
-            //SharedPtrMutex mutex(&sp_mutex);
             if (this != &p)
                 this->set(!p ? nullptr : p.ptr_wrap->clone(), p.counter);
             return *this;
@@ -197,15 +213,14 @@ namespace cs540 {
 
         template<typename U>
         SharedPtr<T> &operator=(const SharedPtr<U> &p) {
-            //SharedPtrMutex mutex(&sp_mutex);
-//            if (this != &p)
+//            this->val = optional_dynamic_cast<T *, U *>(static_cast<T *>(p.get()), std::is_polymorphic<T>::value);
+            this->val = optional_dynamic_cast<T>(p.get());
             this->set<U>(!p ? nullptr : p.ptr_wrap->clone(), p.counter);
             return *this;
         }
 
         // |-- Move Assignment
         SharedPtr &operator=(SharedPtr &&p) {
-            //SharedPtrMutex mutex(&sp_mutex);
             this->set(!p ? nullptr : p.ptr_wrap, p.counter, false);
             p.ptr_wrap = nullptr;
             p.counter = nullptr;
@@ -214,7 +229,6 @@ namespace cs540 {
 
         template<typename U>
         SharedPtr &operator=(SharedPtr<U> &&p) {
-            //SharedPtrMutex mutex(&sp_mutex);
             this->set<U>(!p ? nullptr : p.ptr_wrap, p.counter, false);
             p.ptr_wrap = nullptr;
             p.counter = nullptr;
@@ -223,7 +237,6 @@ namespace cs540 {
 
         // |- Modifiers
         void reset() {
-            //SharedPtrMutex mutex(&sp_mutex);
             set(nullptr, nullptr, false);
         }
 
@@ -232,7 +245,6 @@ namespace cs540 {
             if (!p)
                 this->reset();
             else {
-                //SharedPtrMutex mutex(&sp_mutex);
                 this->set<U>(new PtrValue<U>(p), new Counter);
             }
         }
@@ -307,12 +319,15 @@ namespace cs540 {
 
     template<typename T, typename U>
     SharedPtr<T> static_pointer_cast(const SharedPtr<U> &sp) {
+//        return SharedPtr<T>(sp);
+//        static_cast<T *>(sp.get());
         return SharedPtr<T>(sp);
     }
 
     template<typename T, typename U>
     SharedPtr<T> dynamic_pointer_cast(const SharedPtr<U> &sp) {
-        return SharedPtr<T>(new PtrValue<T>(dynamic_cast<T *>(sp.get())), sp.counter);
+        T *val = dynamic_cast<T *>(sp.get());
+        return SharedPtr<T>(new PtrValue<T>(val), sp.counter, val);
     }
 
 }
